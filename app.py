@@ -60,11 +60,16 @@ def generate_sas_token():
 
     return 'SharedAccessSignature ' + urlencode(rawtoken)
 
-def read_temp():
+def read_temp(unit):
     humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR, DHT_PIN)
-    if temperature is None:
-        return 0
-    return temperature
+    if temperature is None or humidity is None:
+        return (0,0)
+    if(unit == "F"):
+        temperature = temperature * (9 / 5) + 32
+        TEMP_UNIT = 'Farenheit'
+    else:
+        TEMP_UNIT = 'Celsius'
+    return (temperature, humidity)
 
 def get_api_vals():
     try:
@@ -75,9 +80,9 @@ def get_api_vals():
         if (data_json["message"] == 'Device not found'):
             return (0,0)
         else:
-            return int(data_json["data"]["tempInterval"]), data_json["data"]["reboot"]
+            return int(data_json["data"]["dataInterval"]), data_json["data"]["tempUnit"], data_json["data"]["reboot"]
     except:
-        return (-1,-1)
+        return (-1,-1,-1)
 
 def send_message_azure(token, message):
     try:
@@ -92,14 +97,15 @@ def send_message_azure(token, message):
     except:
         print("Connection error with Azure")
 
-def send_message_jdedwards(temp):
+def send_message_jdedwards(temp, humidity):
     try:
         iot_universal_id = 'IOTUniversalID=' + UUID
         device_id_api = 'DeviceNumber=' + DEVICE_NUMBER
         ip_address = 'IPAddress=' + IP_ADDRESS
         temp_api = 'Temperature={:0.2f}&TemperatureUM={}'.format(temp,TEMP_UNIT)
+        humidity_api = 'Humidity={:0.2f}&HumidityUM=%'.format(humidity)
         
-        response = requests.get(JDEDWARDS_API_URL + iot_universal_id + '&' + device_id_api + '&' + ip_address + '&' + temp_api, 
+        response = requests.get(JDEDWARDS_API_URL + iot_universal_id + '&' + device_id_api + '&' + ip_address + '&' + temp_api + '&' + humidity_api, 
                     auth = HTTPBasicAuth(JDEDWARDS_USER, JDEDWARDS_PASS))
         print(response.content)
     except:
@@ -109,24 +115,27 @@ if __name__ == '__main__':
     # 1. Generate SAS Token
     token = generate_sas_token()
     counter = 0
-    temp_interval = 0
+    data_interval = 0
     reboot = 0
+    temp_unit = 'C'
     
     # 2. Send Temperature to IoT Hub
     while True:
-        temp = read_temp() 
         if (counter % 10 == 0):
-            temp_interval, reboot = get_api_vals()
-            if (temp_interval == -1):
+            data_interval, temp_unit, reboot = get_api_vals()
+            if (data_interval == -1):
                 print("Invalid API")
                 continue
-        if (counter == 0 or temp > 40):
+            if (not(temp_unit == 'C' or temp_unit == 'F')):
+                temp_unit = 'C'
+        temp, humidity = read_temp(temp_unit) 
+        if (counter == 0):
             counter = 0
-            message = { "temp": str(temp) , "time": str(datetime.now())}
+            message = { "temp": str(round(temp,2)) , "humidity": str(round(humidity,2)), "time": str(datetime.now())}
             send_message_azure(token, message)
-            send_message_jdedwards(temp)
-        print(counter, temp_interval)
+            send_message_jdedwards(temp, humidity)
+        print(counter, data_interval)
         time.sleep(1)
         counter = counter + 1
-        if(counter >= temp_interval):
+        if(counter >= data_interval):
             counter = 0
