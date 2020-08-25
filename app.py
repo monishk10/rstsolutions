@@ -60,6 +60,24 @@ def generate_sas_token():
 
     return 'SharedAccessSignature ' + urlencode(rawtoken)
 
+def create_entry():
+    URL = 'http://192.168.1.106:7777/devices'
+    data = {
+        "IOTUniversalID": UUID,
+        "DeviceNumber": DEVICE_NUMBER,
+        "IPAddress": IP_ADDRESS,
+        "dataInterval": "300",
+        "reboot": "0",
+        "tempUnit": "F",
+        "minTemp": "80",
+        "maxTemp": "85"
+    }
+
+    response = requests.post(URL, data=data)     
+    print(response.status_code)
+
+
+
 def read_temp(unit):
     humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR, DHT_PIN)
     if temperature is None or humidity is None:
@@ -69,17 +87,31 @@ def read_temp(unit):
     return (temperature, humidity)
 
 def get_api_vals():
+    '''
+        Data Codes
+        0 - OK
+        1 - DEVICE NOT FOUND
+        2 - ERROR CONNECTING TO API
+    '''
+    data = {"code": 0}
     try:
         url = 'http://192.168.1.106:7777/device/{0}'.format(UUID)
         response = requests.get(url)
         response = response.content.decode('utf-8')
         data_json = json.loads(response)
+        
         if (data_json["message"] == 'Device not found'):
-            return (0,0)
+            data["code"] = 1
         else:
-            return int(data_json["data"]["dataInterval"]), data_json["data"]["tempUnit"], data_json["data"]["reboot"]
+            data["dataInterval"] = int(data_json["data"]["dataInterval"])
+            data["tempUnit"] = data_json["data"]["tempUnit"]
+            data["reboot"] = data_json["data"]["reboot"]
+            data["minTemp"] = float(data_json["data"]["minTemp"])
+            data["maxTemp"] = float(data_json["data"]["maxTemp"])
     except:
-        return (-1,-1,-1)
+        data["code"] = 2
+
+    return data
 
 def send_message_azure(token, message):
     try:
@@ -132,22 +164,36 @@ if __name__ == '__main__':
     # 3. Initialize variable
     counter = data_interval = reboot = 0
     temp_unit = 'C'
+    is_trigger_allowed = True
     
-    # 4. Process all the info
+    # 4. Create an entry
+    create_entry()
+
     while True:
         # 5. Check api values every 10 sec
         if (counter % 10 == 0):
-            data_interval, temp_unit, reboot = get_api_vals()
-            if (reboot == '1'):
-                os.system("sudo reboot")
-            if (data_interval == -1):
-                print("Invalid API")
+            data = get_api_vals()
+
+            # Check codes
+            if(data["code"] == 1):
+                print("Device Not Found")
+                time.sleep(1)
                 continue
-            if (not(temp_unit == 'C' or temp_unit == 'F')):
-                temp_unit = 'C'
+            elif(data["code"] == 2):
+                print("Invalid API. Check API again")
+                time.sleep(1)
+                break
+
+            if (data["reboot"] == '1'):
+                os.system("sudo reboot")
+            
+            if (not(data["tempUnit"] == 'C' or data["tempUnit"] == 'F')):
+                data["tempUnit"] = 'C'
+
+            data_interval = data["dataInterval"]
         
         # 6. Read temperature and humidity values
-        temp, humidity = read_temp(temp_unit) 
+        temp, humidity = read_temp(data["tempUnit"]) 
 
         # 7. Send data to azure and JD Edwards if data interval time matches
         if (counter == 0):
@@ -156,11 +202,16 @@ if __name__ == '__main__':
             send_message_jdedwards(temp, temp_unit, humidity)
         
         # 8. Trigger event if temp<minTemp or temp>maxTemp
-        trigger_email(temp)
+        if(temp < data["minTemp"] or temp > data["maxTemp"]):
+            if(is_trigger_allowed):
+                is_trigger_allowed = False
+                trigger_email(temp)
+        else:
+            is_trigger_allowed = True
 
-        
+
         print(counter, data_interval)
-        time.sleep(1)
+        time.sleep(0.7)
         counter = counter + 1
         if(counter >= data_interval):
             counter = 0
