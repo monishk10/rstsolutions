@@ -147,7 +147,12 @@ def trigger_email(temp):
         headers = {
             "Content-Type": "application/json",
         }
-        response = requests.get(EMAIL_TRIGGER_URL, headers=headers, data=json.dumps({"value1": round(temp,2)}))
+        data = {
+            "value1": round(temp,2),
+            "value2": UUID,
+            "value3": DEVICE_NUMBER
+        }
+        response = requests.get(EMAIL_TRIGGER_URL, headers=headers, data=json.dumps(data))
         print("EMAIL SENT")
     except:
         print("Error sending email")
