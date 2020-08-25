@@ -41,8 +41,6 @@ def getserial():
 
     return cpuserial
 
-UUID = getserial()
-print(UUID)
 
 def generate_sas_token():
     expiry = str(int(time.time() + 3600))
@@ -65,9 +63,6 @@ def read_temp(unit):
         return (0,0)
     if(unit == "F"):
         temperature = temperature * (9 / 5) + 32
-        TEMP_UNIT = 'Farenheit'
-    else:
-        TEMP_UNIT = 'Celsius'
     return (temperature, humidity)
 
 def get_api_vals():
@@ -113,15 +108,20 @@ def send_message_jdedwards(temp, temp_unit, humidity):
         print("Connection error with JD Edwards") 
 
 if __name__ == '__main__':
-    # 1. Generate SAS Token
+    # 1. Generate UUID
+    UUID = getserial()
+    print("UUID: {}".format(UUID))
+
+    # 2. Generate SAS Token
     token = generate_sas_token()
-    counter = 0
-    data_interval = 0
-    reboot = 0
+
+    # 3. Initialize variable
+    counter = data_interval = reboot = 0
     temp_unit = 'C'
     
-    # 2. Send Temperature to IoT Hub
+    # 4. Process all the info
     while True:
+        # 5. Check api values every 10 sec
         if (counter % 10 == 0):
             data_interval, temp_unit, reboot = get_api_vals()
             if (reboot == '1'):
@@ -131,12 +131,16 @@ if __name__ == '__main__':
                 continue
             if (not(temp_unit == 'C' or temp_unit == 'F')):
                 temp_unit = 'C'
+        
+        # 6. Read temperature and humidity values
         temp, humidity = read_temp(temp_unit) 
+
+        # 7. Send data to azure and JD Edwards if data interval time matches
         if (counter == 0):
-            counter = 0
             message = { "temp": str(round(temp,2)) , "humidity": str(round(humidity,2)), "time": str(datetime.now())}
             send_message_azure(token, message)
             send_message_jdedwards(temp, temp_unit, humidity)
+        
         print(counter, data_interval)
         time.sleep(1)
         counter = counter + 1
