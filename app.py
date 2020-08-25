@@ -26,7 +26,6 @@ JDEDWARDS_USER = 'Vivek'
 JDEDWARDS_PASS = 'Vivek@1'
 DEVICE_NUMBER = '100'
 IP_ADDRESS = '192.168.1.106'
-TEMP_UNIT = 'Celsius'
 
 def getserial():
     # Extract serial from cpuinfo file
@@ -97,15 +96,17 @@ def send_message_azure(token, message):
     except:
         print("Connection error with Azure")
 
-def send_message_jdedwards(temp, humidity):
+def send_message_jdedwards(temp, temp_unit, humidity):
     try:
         iot_universal_id = 'IOTUniversalID=' + UUID
         device_id_api = 'DeviceNumber=' + DEVICE_NUMBER
         ip_address = 'IPAddress=' + IP_ADDRESS
-        temp_api = 'Temperature={:0.2f}&TemperatureUM={}'.format(temp,TEMP_UNIT)
+        temp_api = 'Temperature={:0.2f}&TemperatureUM={}'.format(temp,temp_unit)
         humidity_api = 'Humidity={:0.2f}&HumidityUM=%'.format(humidity)
         
-        response = requests.get(JDEDWARDS_API_URL + iot_universal_id + '&' + device_id_api + '&' + ip_address + '&' + temp_api + '&' + humidity_api, 
+        request_url = JDEDWARDS_API_URL + iot_universal_id + '&' + device_id_api + '&' + ip_address + '&' + temp_api + '&' + humidity_api
+        print(request_url)
+        response = requests.get(request_url, 
                     auth = HTTPBasicAuth(JDEDWARDS_USER, JDEDWARDS_PASS))
         print(response.content)
     except:
@@ -123,6 +124,8 @@ if __name__ == '__main__':
     while True:
         if (counter % 10 == 0):
             data_interval, temp_unit, reboot = get_api_vals()
+            if (reboot == '1'):
+                os.system("sudo reboot")
             if (data_interval == -1):
                 print("Invalid API")
                 continue
@@ -133,7 +136,7 @@ if __name__ == '__main__':
             counter = 0
             message = { "temp": str(round(temp,2)) , "humidity": str(round(humidity,2)), "time": str(datetime.now())}
             send_message_azure(token, message)
-            send_message_jdedwards(temp, humidity)
+            send_message_jdedwards(temp, temp_unit, humidity)
         print(counter, data_interval)
         time.sleep(1)
         counter = counter + 1
