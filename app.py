@@ -27,6 +27,9 @@ JDEDWARDS_PASS = 'Vivek@1'
 DEVICE_NUMBER = '100'
 IP_ADDRESS = '192.168.1.106'
 
+# TRIGGER EVENT
+EMAIL_TRIGGER_URL = 'https://maker.ifttt.com/trigger/temp_alert/with/key/dhdMjDRsVok5BEth3SmtTK'
+
 def getserial():
     # Extract serial from cpuinfo file
     cpuserial = "0000000000000000"
@@ -107,6 +110,17 @@ def send_message_jdedwards(temp, temp_unit, humidity):
     except:
         print("Connection error with JD Edwards") 
 
+def trigger_email(temp):
+    try:
+        headers = {
+            "Content-Type": "application/json",
+        }
+        response = requests.get(EMAIL_TRIGGER_URL, headers=headers, data=json.dumps({"value1": round(temp,2)}))
+        print("EMAIL SENT")
+    except:
+        print("Error sending email")
+
+
 if __name__ == '__main__':
     # 1. Generate UUID
     UUID = getserial()
@@ -140,6 +154,10 @@ if __name__ == '__main__':
             message = { "temp": str(round(temp,2)) , "humidity": str(round(humidity,2)), "time": str(datetime.now())}
             send_message_azure(token, message)
             send_message_jdedwards(temp, temp_unit, humidity)
+        
+        # 8. Trigger event if temp<minTemp or temp>maxTemp
+        trigger_email(temp)
+
         
         print(counter, data_interval)
         time.sleep(1)
