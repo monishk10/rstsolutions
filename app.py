@@ -9,10 +9,14 @@ import requests
 import json
 import os
 import time
+import serial
  
 # Temperature Sensor
 DHT_SENSOR = Adafruit_DHT.DHT22
 DHT_PIN = 4
+
+# Serial port
+SERIAL_PORT = "/dev/serial0"
 
 # Azure IoT Hub
 URI = 'temp-data.azure-devices.net'
@@ -76,7 +80,55 @@ def create_entry():
     response = requests.post(URL, data=data)     
     print(response.status_code)
 
+# In the NMEA message, the position gets transmitted as:
+# DDMM.MMMMM, where DD denotes the degrees and MM.MMMMM denotes
+# the minutes. However, I want to convert this format to the following:
+# DD.MMMM. This method converts a transmitted string to the desired format
+def formatDegreesMinutes(coordinates, digits, direction):
+    
+    parts = coordinates.split(".")
 
+    if (len(parts) != 2):
+        return coordinates
+
+    if (digits > 3 or digits < 2):
+        return coordinates
+    
+    left = parts[0]
+    right = parts[1]
+    degrees = str(left[:digits])
+    minutes = str(right[:3])
+
+    sign = ""
+    if (direction == 'S' or direction == 'W'):
+        sign = "-"
+    return sign + degrees + "." + minutes
+
+# This method reads the data from the serial port, the GPS dongle is attached to,
+# and then parses the NMEA messages it transmits.
+# gps is the serial port, that's used to communicate with the GPS adapter
+def getPositionData(gps):
+    data = gps.readline().decode('utf-8')
+    message = data[0:6]
+    if (message == "$GPRMC"):
+        # GPRMC = Recommended minimum specific GPS/Transit data
+        # Reading the GPS fix data is an alternative approach that also works
+        parts = data.split(",")
+        if parts[2] == 'V':
+            # V = Warning, most likely, there are no satellites in view...
+            print("GPS receiver warning")
+            return (-1.0,-1.0)
+        else:
+            # Get the position data that was transmitted with the GPRMC message
+            # In this example, I'm only interested in the longitude and latitude
+            # for other values, that can be read, refer to: http://aprs.gids.nl/nmea/#rmc
+            longitude = formatDegreesMinutes(parts[5], 3, parts[6])
+            latitude = formatDegreesMinutes(parts[3], 2, parts[4])
+            print("Your position: lat = " + str(latitude) + ", lon = " + str(longitude))
+            return (float(latitude), float(longitude))
+    else:
+        # Handle other NMEA messages and unsupported strings
+        return (0.0,0.0)
 
 def read_temp(unit):
     humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR, DHT_PIN)
@@ -126,15 +178,16 @@ def send_message_azure(token, message):
     except:
         print("Connection error with Azure")
 
-def send_message_jdedwards(temp, temp_unit, humidity):
+def send_message_jdedwards(temp, temp_unit, humidity, lat, lon):
     try:
         iot_universal_id = 'IOTUniversalID=' + UUID
         device_id_api = 'DeviceNumber=' + DEVICE_NUMBER
         ip_address = 'IPAddress=' + IP_ADDRESS
         temp_api = 'Temperature={:0.2f}&TemperatureUM={}'.format(temp,temp_unit)
         humidity_api = 'Humidity={:0.2f}&HumidityUM=%'.format(humidity)
+        location_api = 'Data1={}&Data1UM=lat&Data2={}&Data2UM=lon'.format(lat,lon)
         
-        request_url = JDEDWARDS_API_URL + iot_universal_id + '&' + device_id_api + '&' + ip_address + '&' + temp_api + '&' + humidity_api
+        request_url = JDEDWARDS_API_URL + iot_universal_id + '&' + device_id_api + '&' + ip_address + '&' + temp_api + '&' + humidity_api + '&' + location_api
         print(request_url)
         response = requests.get(request_url, 
                     auth = HTTPBasicAuth(JDEDWARDS_USER, JDEDWARDS_PASS))
@@ -167,56 +220,71 @@ if __name__ == '__main__':
     token = generate_sas_token()
 
     # 3. Initialize variable
-    counter = data_interval = reboot = 0
+    counter = data_interval = reboot = lat = lon = 0
     temp_unit = 'C'
     is_trigger_allowed = True
+    running = True
     
     # 4. Create an entry
     create_entry()
 
-    while True:
-        # 5. Check api values every 10 sec
-        if (counter % 10 == 0):
-            data = get_api_vals()
+    gps = serial.Serial(SERIAL_PORT, baudrate = 9600, timeout = 0.5)
+    while running:
+        try:
+            # 5. Check api values every 10 sec
+            if (counter % 10 == 0):
+                data = get_api_vals()
 
-            # Check codes
-            if(data["code"] == 1):
-                print("Device Not Found")
-                time.sleep(1)
-                continue
-            elif(data["code"] == 2):
-                print("Invalid API. Check API again")
-                time.sleep(1)
-                break
+                # Check codes
+                if(data["code"] == 1):
+                    print("Device Not Found")
+                    time.sleep(1)
+                    continue
+                elif(data["code"] == 2):
+                    print("Invalid API. Check API again")
+                    time.sleep(1)
+                    break
 
-            if (data["reboot"] == '1'):
-                os.system("sudo reboot")
+                if (data["reboot"] == '1'):
+                    os.system("sudo reboot")
+                
+                if (not(data["tempUnit"] == 'C' or data["tempUnit"] == 'F')):
+                    data["tempUnit"] = 'C'
+
+                data_interval = data["dataInterval"]
             
-            if (not(data["tempUnit"] == 'C' or data["tempUnit"] == 'F')):
-                data["tempUnit"] = 'C'
+            # 6. Read temperature and humidity values
+            temp, humidity = read_temp(data["tempUnit"]) 
 
-            data_interval = data["dataInterval"]
-        
-        # 6. Read temperature and humidity values
-        temp, humidity = read_temp(data["tempUnit"]) 
+            # 7. Send data to azure and JD Edwards if data interval time matches
+            if (counter == 0):
+                while (lon == 0 or lon == -1):
+                    lat, lon = getPositionData(gps)
+                message = { 
+                    "temp": str(round(temp,2)) , 
+                    "humidity": str(round(humidity,2)), 
+                    "lat": str(lat),
+                    "lon": str(lon),
+                    "time": str(datetime.now())
+                }
+                send_message_azure(token, message)
+                send_message_jdedwards(temp, temp_unit, humidity, lat, lon)
+            
+            # 8. Trigger event if temp<minTemp or temp>maxTemp
+            if(temp < data["minTemp"] or temp > data["maxTemp"]):
+                if(is_trigger_allowed):
+                    is_trigger_allowed = False
+                    trigger_email(temp)
+            else:
+                is_trigger_allowed = True
 
-        # 7. Send data to azure and JD Edwards if data interval time matches
-        if (counter == 0):
-            message = { "temp": str(round(temp,2)) , "humidity": str(round(humidity,2)), "time": str(datetime.now())}
-            send_message_azure(token, message)
-            send_message_jdedwards(temp, temp_unit, humidity)
-        
-        # 8. Trigger event if temp<minTemp or temp>maxTemp
-        if(temp < data["minTemp"] or temp > data["maxTemp"]):
-            if(is_trigger_allowed):
-                is_trigger_allowed = False
-                trigger_email(temp)
-        else:
-            is_trigger_allowed = True
 
-
-        print(counter, data_interval)
-        time.sleep(0.7)
-        counter = counter + 1
-        if(counter >= data_interval):
-            counter = 0
+            print(counter, data_interval)
+            time.sleep(0.7)
+            counter = counter + 1
+            if(counter >= data_interval):
+                counter = 0
+        except KeyboardInterrupt:
+            gps.close()
+            running = False
+            print("Done")
