@@ -29,7 +29,7 @@ JDEDWARDS_API_URL = 'http://50.243.34.141:3345/jderest/v3/orchestrator/IoTDevice
 JDEDWARDS_USER = 'Vivek'
 JDEDWARDS_PASS = 'Vivek@1'
 DEVICE_NUMBER = '100'
-IP_ADDRESS = '192.168.1.106'
+IP_ADDRESS = '192.168.43.49'
 
 # TRIGGER EVENT
 EMAIL_TRIGGER_URL = 'https://maker.ifttt.com/trigger/temp_alert/with/key/dhdMjDRsVok5BEth3SmtTK'
@@ -65,7 +65,7 @@ def generate_sas_token():
     return 'SharedAccessSignature ' + urlencode(rawtoken)
 
 def create_entry():
-    URL = 'http://192.168.1.106:7777/devices'
+    URL = 'http://{}:7777/devices'.format(IP_ADDRESS)
     data = {
         "IOTUniversalID": UUID,
         "DeviceNumber": DEVICE_NUMBER,
@@ -147,7 +147,7 @@ def get_api_vals():
     '''
     data = {"code": 0}
     try:
-        url = 'http://192.168.1.106:7777/device/{0}'.format(UUID)
+        url = 'http://{}:7777/device/{}'.format(IP_ADDRESS,UUID)
         response = requests.get(url)
         response = response.content.decode('utf-8')
         data_json = json.loads(response)
@@ -180,14 +180,16 @@ def send_message_azure(token, message):
 
 def send_message_jdedwards(temp, temp_unit, humidity, lat, lon):
     try:
-        iot_universal_id = 'IOTUniversalID=' + UUID
         device_id_api = 'DeviceNumber=' + DEVICE_NUMBER
+        iot_universal_id = 'IOTUniversalID=' + UUID
         ip_address = 'IPAddress=' + IP_ADDRESS
         temp_api = 'Temperature={:0.2f}&TemperatureUM={}'.format(temp,temp_unit)
+        weight_api ='Weight=0&WeightUM=kg'
+        location_api = 'Latitude={}&Longitude={}'.format(lat,lon)
+        precipitation_api = 'Precipitation=0&PrecipitationUM=A'
         humidity_api = 'Humidity={:0.2f}&HumidityUM=%'.format(humidity)
-        location_api = 'Data1={}&Data1UM=lat&Data2={}&Data2UM=lon'.format(lat,lon)
         
-        request_url = JDEDWARDS_API_URL + iot_universal_id + '&' + device_id_api + '&' + ip_address + '&' + temp_api + '&' + humidity_api + '&' + location_api
+        request_url = JDEDWARDS_API_URL + device_id_api + '&' + iot_universal_id + '&' + ip_address + '&' + temp_api + '&' + weight_api + '&' + location_api + '&' + precipitation_api + '&' + humidity_api
         print(request_url)
         response = requests.get(request_url, 
                     auth = HTTPBasicAuth(JDEDWARDS_USER, JDEDWARDS_PASS))
@@ -226,7 +228,7 @@ if __name__ == '__main__':
     running = True
     
     # 4. Create an entry
-    create_entry()
+    # create_entry()
 
     gps = serial.Serial(SERIAL_PORT, baudrate = 9600, timeout = 0.5)
     while running:
@@ -249,20 +251,22 @@ if __name__ == '__main__':
                     os.system("sudo reboot")
                 
                 if (not(data["tempUnit"] == 'C' or data["tempUnit"] == 'F')):
-                    data["tempUnit"] = 'C'
+                    temp_unit = 'C'
+                else:
+                    temp_unit = data["tempUnit"]
 
                 data_interval = data["dataInterval"]
             
             # 6. Read temperature and humidity values
-            temp, humidity = read_temp(data["tempUnit"]) 
+            temp, humidity = read_temp(temp_unit) 
 
             # 7. Send data to azure and JD Edwards if data interval time matches
             if (counter == 0):
                 while (lon == 0 or lon == -1):
                     lat, lon = getPositionData(gps)
                 message = { 
-                    "temp": str(round(temp,2)) , 
-                    "humidity": str(round(humidity,2)), 
+                    "temp": str(round(temp,2)) + temp_unit , 
+                    "humidity": str(round(humidity,2)) + '%', 
                     "lat": str(lat),
                     "lon": str(lon),
                     "time": str(datetime.now())
