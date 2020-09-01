@@ -55,7 +55,8 @@ class DeviceList(Resource):
         parser.add_argument('tempUnit', required=True)
         parser.add_argument('minTemp', required=True)
         parser.add_argument('maxTemp', required=True)
-
+        parser.add_argument('minHum', required=True)
+        parser.add_argument('maxHum', required=True)
         # Parse the arguments into an object
         args = parser.parse_args()
 
@@ -98,6 +99,8 @@ class Device(Resource):
         parser.add_argument('tempUnit', required=True)
         parser.add_argument('minTemp', required=True)
         parser.add_argument('maxTemp', required=True)
+        parser.add_argument('minHum', required=True)
+        parser.add_argument('maxHum', required=True)
 
         # Parse the arguments into an object
         args = parser.parse_args()
