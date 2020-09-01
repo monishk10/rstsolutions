@@ -4,12 +4,17 @@ from urllib.parse import quote_plus, urlencode
 from hmac import HMAC
 from datetime import datetime
 from requests.auth import HTTPBasicAuth 
+from geopy.geocoders import Nominatim
+from keyrings.alt.file import PlaintextKeyring
 import Adafruit_DHT
 import requests
 import json
 import os
 import time
 import serial
+import yagmail
+import keyring.backend
+
  
 # Temperature Sensor
 DHT_SENSOR = Adafruit_DHT.DHT22
@@ -33,6 +38,14 @@ IP_ADDRESS = '192.168.43.49'
 
 # TRIGGER EVENT
 EMAIL_TRIGGER_URL = 'https://maker.ifttt.com/trigger/temp_alert/with/key/dhdMjDRsVok5BEth3SmtTK'
+
+# GPS
+geolocator = Nominatim(user_agent="rst")
+
+# EMAIL
+keyring.set_keyring(PlaintextKeyring())
+yag = yagmail.SMTP('monish.nyu')
+email_list = ['monishk1001@gmail.com', 'mnk337@nyu.edu']
 
 def getserial():
     # Extract serial from cpuinfo file
@@ -117,18 +130,17 @@ def getPositionData(gps):
         if parts[2] == 'V':
             # V = Warning, most likely, there are no satellites in view...
             print("GPS receiver warning")
-            return (-1.0,-1.0)
+            return (-1.0,-1.0, "GPS Error")
         else:
             # Get the position data that was transmitted with the GPRMC message
             # In this example, I'm only interested in the longitude and latitude
             # for other values, that can be read, refer to: http://aprs.gids.nl/nmea/#rmc
             longitude = formatDegreesMinutes(parts[5], 3, parts[6])
             latitude = formatDegreesMinutes(parts[3], 2, parts[4])
-            print("Your position: lat = " + str(latitude) + ", lon = " + str(longitude))
-            return (float(latitude), float(longitude))
+            return (float(latitude), float(longitude), geolocator.reverse("{}, {}".format(latitude, longitude)))
     else:
         # Handle other NMEA messages and unsupported strings
-        return (0.0,0.0)
+        return (0.0,0.0, "No location")
 
 def read_temp(unit):
     humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR, DHT_PIN)
@@ -175,6 +187,7 @@ def send_message_azure(token, message):
         data = json.dumps(message)
         print(data)
         response = requests.post(url, data=data, headers=headers)
+        print(response.content.decode('utf-8'))
     except:
         print("Connection error with Azure")
 
@@ -190,24 +203,27 @@ def send_message_jdedwards(temp, temp_unit, humidity, lat, lon):
         humidity_api = 'Humidity={:0.2f}&HumidityUM=%'.format(humidity)
         
         request_url = JDEDWARDS_API_URL + device_id_api + '&' + iot_universal_id + '&' + ip_address + '&' + temp_api + '&' + weight_api + '&' + location_api + '&' + precipitation_api + '&' + humidity_api
-        print(request_url)
         response = requests.get(request_url, 
                     auth = HTTPBasicAuth(JDEDWARDS_USER, JDEDWARDS_PASS))
-        print(response.content)
+        print(response.content.decode('utf-8'))
     except:
         print("Connection error with JD Edwards") 
 
-def trigger_email(temp):
+def trigger_temp_email(temp, temp_unit, location):
     try:
-        headers = {
-            "Content-Type": "application/json",
-        }
-        data = {
-            "value1": round(temp,2),
-            "value2": UUID,
-            "value3": DEVICE_NUMBER
-        }
-        response = requests.get(EMAIL_TRIGGER_URL, headers=headers, data=json.dumps(data))
+        
+        subject = 'Temp Alert'
+        content = [
+            '<h2>Temperature Alert </h2>', 
+            '<p>Temperature: {}° {} </p>'.format(round(temp,2), temp_unit), 
+            '<p>Device Number: {}</p>'.format(DEVICE_NUMBER),
+            '<p>UUID: {}</p>'.format(UUID),
+            '<p>Location: {}</p>'.format(location),
+            '<p>Time: {}</p>'.format(datetime.now()),
+            '<a href="http://www.google.com">Link</a>'
+            ]
+
+        yag.send(email_list, subject, content)
         print("EMAIL SENT")
     except:
         print("Error sending email")
@@ -263,10 +279,14 @@ if __name__ == '__main__':
             # 7. Send data to azure and JD Edwards if data interval time matches
             if (counter == 0):
                 while (lon == 0 or lon == -1):
-                    lat, lon = getPositionData(gps)
+                    lat, lon, location = getPositionData(gps)
+
+                print(location)
                 message = { 
-                    "temp": str(round(temp,2)) + temp_unit , 
-                    "humidity": str(round(humidity,2)) + '%', 
+                    "temp": str(round(temp,2)), 
+                    "tempUnit": temp_unit,
+                    "humidity": str(round(humidity,2)),
+                    "humidityUnit": '%', 
                     "lat": str(lat),
                     "lon": str(lon),
                     "time": str(datetime.now())
@@ -278,11 +298,11 @@ if __name__ == '__main__':
             if(temp < data["minTemp"] or temp > data["maxTemp"]):
                 if(is_trigger_allowed):
                     is_trigger_allowed = False
-                    trigger_email(temp)
+                    trigger_temp_email(temp, temp_unit, location)
             else:
                 is_trigger_allowed = True
-
-
+            
+            
             print(counter, data_interval)
             time.sleep(0.7)
             counter = counter + 1
