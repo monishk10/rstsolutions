@@ -34,7 +34,7 @@ JDEDWARDS_API_URL = 'http://50.243.34.141:3345/jderest/v3/orchestrator/IoTDevice
 JDEDWARDS_USER = 'Vivek'
 JDEDWARDS_PASS = 'Vivek@1'
 DEVICE_NUMBER = '100'
-IP_ADDRESS = '192.168.43.49'
+IP_ADDRESS = '192.168.0.10'
 
 # TRIGGER EVENT
 EMAIL_TRIGGER_URL = 'https://maker.ifttt.com/trigger/temp_alert/with/key/dhdMjDRsVok5BEth3SmtTK'
@@ -78,20 +78,36 @@ def generate_sas_token():
     return 'SharedAccessSignature ' + urlencode(rawtoken)
 
 def create_entry():
-    URL = 'http://{}:7777/devices'.format(IP_ADDRESS)
-    data = {
-        "IOTUniversalID": UUID,
-        "DeviceNumber": DEVICE_NUMBER,
-        "IPAddress": IP_ADDRESS,
-        "dataInterval": "300",
-        "reboot": "0",
-        "tempUnit": "F",
-        "minTemp": "80",
-        "maxTemp": "85"
-    }
+    try:
+        url = 'http://{}:7777/device/{}'.format(IP_ADDRESS,UUID)
+        response = requests.get(url)
+        response = response.content.decode('utf-8')
+        data_json = json.loads(response)
+        
+        if (data_json["message"] == 'Device found'):
+            print("Entry already exists")
+        else:
+            URL = 'http://{}:7777/devices'.format(IP_ADDRESS)
+            data = {
+                "IOTUniversalID": UUID ,
+                "DeviceNumber": DEVICE_NUMBER,
+                "IPAddress": IP_ADDRESS,
+                "dataInterval": "300",
+                "reboot": "0",
+                "tempUnit": "C",
+                "minTemp": "20",
+                "maxTemp": "40",
+                "minHum": "30",
+                "maxHum": "80"
+            }
 
-    response = requests.post(URL, data=data)     
-    print(response.status_code)
+            response = requests.post(URL, data=data)     
+            if (response.status_code == 201):
+                print("Entry created")
+            else:
+                print("Error creating entry")
+    except:
+        print("Error creating entry")
 
 # In the NMEA message, the position gets transmitted as:
 # DDMM.MMMMM, where DD denotes the degrees and MM.MMMMM denotes
@@ -266,7 +282,7 @@ if __name__ == '__main__':
     running = True
     
     # 4. Create an entry
-    # create_entry()
+    create_entry()
 
     gps = serial.Serial(SERIAL_PORT, baudrate = 9600, timeout = 0.5)
     while running:
