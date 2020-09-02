@@ -45,7 +45,7 @@ geolocator = Nominatim(user_agent="rst")
 # EMAIL
 keyring.set_keyring(PlaintextKeyring())
 yag = yagmail.SMTP('monish.nyu')
-email_list = ['monishk1001@gmail.com', 'mnk337@nyu.edu']
+email_list = ['monishk1001@gmail.com', 'mnk337@nyu.edu', 'vivek.patil1985@gmail.com']
 
 def getserial():
     # Extract serial from cpuinfo file
@@ -172,6 +172,8 @@ def get_api_vals():
             data["reboot"] = data_json["data"]["reboot"]
             data["minTemp"] = float(data_json["data"]["minTemp"])
             data["maxTemp"] = float(data_json["data"]["maxTemp"])
+            data["minHum"] = float(data_json["data"]["minHum"])
+            data["maxHum"] = float(data_json["data"]["maxHum"])
     except:
         data["code"] = 2
 
@@ -209,25 +211,42 @@ def send_message_jdedwards(temp, temp_unit, humidity, lat, lon):
     except:
         print("Connection error with JD Edwards") 
 
-def trigger_temp_email(temp, temp_unit, location):
+def trigger_temp_email(temp, temp_unit, state, location, lat, lon):
     try:
-        
-        subject = 'Temp Alert'
+        subject = '{} Temp Alert'.format(state)
         content = [
             '<h2>Temperature Alert </h2>', 
             '<p>Temperature: {}° {} </p>'.format(round(temp,2), temp_unit), 
             '<p>Device Number: {}</p>'.format(DEVICE_NUMBER),
             '<p>UUID: {}</p>'.format(UUID),
-            '<p>Location: {}</p>'.format(location),
+            '<p>Location: {}({},{})</p>'.format(location, lat, lon),
             '<p>Time: {}</p>'.format(datetime.now()),
             '<a href="http://www.google.com">Link</a>'
             ]
 
         yag.send(email_list, subject, content)
-        print("EMAIL SENT")
+        print("TEMP EMAIL SENT")
     except:
-        print("Error sending email")
+        print("Error sending temp email")
 
+def trigger_hum_email(humidity, state, location, lat, lon):
+    try:
+        
+        subject = '{} Humidity Alert'.format(state)
+        content = [
+            '<h2>Humidity Alert </h2>', 
+            '<p>Humidity: {}{} </p>'.format(round(humidity,2), '%'), 
+            '<p>Device Number: {}</p>'.format(DEVICE_NUMBER),
+            '<p>UUID: {}</p>'.format(UUID),
+            '<p>Location: {}({},{})</p>'.format(location, lat, lon),
+            '<p>Time: {}</p>'.format(datetime.now()),
+            '<a href="http://www.google.com">Link</a>'
+            ]
+
+        yag.send(email_list, subject, content)
+        print("HUM EMAIL SENT")
+    except:
+        print("Error sending hum email")
 
 if __name__ == '__main__':
     # 1. Generate UUID
@@ -240,7 +259,10 @@ if __name__ == '__main__':
     # 3. Initialize variable
     counter = data_interval = reboot = lat = lon = 0
     temp_unit = 'C'
-    is_trigger_allowed = True
+    prev_temp_state = 'ABNORMAL'
+    curr_temp_state = ''
+    prev_hum_state = 'ABNORMAL'
+    curr_hum_state = ''
     running = True
     
     # 4. Create an entry
@@ -295,17 +317,35 @@ if __name__ == '__main__':
                 send_message_jdedwards(temp, temp_unit, humidity, lat, lon)
             
             # 8. Trigger event if temp<minTemp or temp>maxTemp
-            if(temp < data["minTemp"] or temp > data["maxTemp"]):
-                if(is_trigger_allowed):
-                    is_trigger_allowed = False
-                    trigger_temp_email(temp, temp_unit, location)
+            if (temp < data["minTemp"]):
+                curr_temp_state = 'Low'
+            elif(temp > data["maxTemp"]):
+                curr_temp_state = 'High'
             else:
-                is_trigger_allowed = True
+                curr_temp_state = 'Normal'
+
+            
+            if(prev_temp_state != curr_temp_state and curr_temp_state != 'Normal'):
+                trigger_temp_email(temp, temp_unit, curr_temp_state, location, lat, lon)
             
             
+            if (humidity < data["minHum"]):
+                curr_hum_state = 'Low'
+            elif(humidity > data["maxHum"]):
+                curr_hum_state = 'High'
+            else:
+                curr_hum_state = 'Normal'
+
+            
+            if(prev_hum_state != curr_hum_state and curr_hum_state != 'Normal'):
+                trigger_hum_email(humidity, curr_hum_state, location, lat, lon)
+            
+
             print(counter, data_interval)
             time.sleep(0.7)
             counter = counter + 1
+            prev_hum_state = curr_hum_state
+            prev_temp_state = curr_temp_state
             if(counter >= data_interval):
                 counter = 0
         except KeyboardInterrupt:
