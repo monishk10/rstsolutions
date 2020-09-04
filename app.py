@@ -14,6 +14,7 @@ import time
 import serial
 import yagmail
 import keyring.backend
+import concurrent.futures
 
  
 # Temperature Sensor
@@ -264,6 +265,9 @@ def trigger_hum_email(humidity, state, location, lat, lon):
     except:
         print("Error sending hum email")
 
+def wait():
+    time.sleep(1)
+
 if __name__ == '__main__':
     # 1. Generate UUID
     UUID = getserial()
@@ -275,95 +279,92 @@ if __name__ == '__main__':
     # 3. Initialize variable
     counter = data_interval = reboot = lat = lon = 0
     temp_unit = 'C'
-    prev_temp_state = 'ABNORMAL'
-    curr_temp_state = ''
-    prev_hum_state = 'ABNORMAL'
-    curr_hum_state = ''
+    prev_temp_state = prev_hum_state = 'ABNORMAL'
+    curr_temp_state = curr_hum_state = ''
     running = True
+    
     
     # 4. Create an entry
     create_entry()
 
     gps = serial.Serial(SERIAL_PORT, baudrate = 9600, timeout = 0.5)
+
     while running:
         try:
-            # 5. Check api values every 10 sec
-            if (counter % 10 == 0):
-                data = get_api_vals()
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                time_wait = executor.submit(wait)
+                # 5. Check api values every 10 sec
+                if (counter % 10 == 0):
+                    data = get_api_vals()
 
-                # Check codes
-                if(data["code"] == 1):
-                    print("Device Not Found")
-                    time.sleep(1)
-                    continue
-                elif(data["code"] == 2):
-                    print("Invalid API. Check API again")
-                    time.sleep(1)
-                    break
+                    # Check codes
+                    if(data["code"] == 1):
+                        print("Device Not Found")
+                        time.sleep(1)
+                        continue
+                    elif(data["code"] == 2):
+                        print("Invalid API. Check API again")
+                        time.sleep(1)
+                        break
 
-                if (data["reboot"] == '1'):
-                    os.system("sudo reboot")
+                    if (data["reboot"] == '1'):
+                        os.system("sudo reboot")
+                    
+                    if (not(data["tempUnit"] == 'C' or data["tempUnit"] == 'F')):
+                        temp_unit = 'C'
+                    else:
+                        temp_unit = data["tempUnit"]
+
+                    data_interval = data["dataInterval"]
                 
-                if (not(data["tempUnit"] == 'C' or data["tempUnit"] == 'F')):
-                    temp_unit = 'C'
-                else:
-                    temp_unit = data["tempUnit"]
+                    # 6. Read temperature and humidity values
+                    temp, humidity = read_temp(temp_unit) 
 
-                data_interval = data["dataInterval"]
-            
-            # 6. Read temperature and humidity values
-            temp, humidity = read_temp(temp_unit) 
+                    # 7. Check Trigger event if temp<minTemp or temp>maxTemp
+                    if (temp < data["minTemp"]):
+                        curr_temp_state = 'Low'
+                    elif(temp > data["maxTemp"]):
+                        curr_temp_state = 'High'
+                    else:
+                        curr_temp_state = 'Normal'
+                    
+                    if (humidity < data["minHum"]):
+                        curr_hum_state = 'Low'
+                    elif(humidity > data["maxHum"]):
+                        curr_hum_state = 'High'
+                    else:
+                        curr_hum_state = 'Normal'
 
-            # 7. Send data to azure and JD Edwards if data interval time matches
-            if (counter == 0):
-                while (lon == 0 or lon == -1):
-                    lat, lon, location = getPositionData(gps)
-
-                print(location)
-                message = { 
-                    "temp": str(round(temp,2)), 
-                    "tempUnit": temp_unit,
-                    "humidity": str(round(humidity,2)),
-                    "humidityUnit": '%', 
-                    "lat": str(lat),
-                    "lon": str(lon),
-                    "time": str(datetime.now())
-                }
-                send_message_azure(token, message)
-                send_message_jdedwards(temp, temp_unit, humidity, lat, lon)
-            
-            # 8. Trigger event if temp<minTemp or temp>maxTemp
-            if (temp < data["minTemp"]):
-                curr_temp_state = 'Low'
-            elif(temp > data["maxTemp"]):
-                curr_temp_state = 'High'
-            else:
-                curr_temp_state = 'Normal'
-
-            
-            if(prev_temp_state != curr_temp_state and curr_temp_state != 'Normal'):
-                trigger_temp_email(temp, temp_unit, curr_temp_state, location, lat, lon)
-            
-            
-            if (humidity < data["minHum"]):
-                curr_hum_state = 'Low'
-            elif(humidity > data["maxHum"]):
-                curr_hum_state = 'High'
-            else:
-                curr_hum_state = 'Normal'
-
-            
-            if(prev_hum_state != curr_hum_state and curr_hum_state != 'Normal'):
-                trigger_hum_email(humidity, curr_hum_state, location, lat, lon)
-            
-
-            print(counter, data_interval)
-            time.sleep(0.7)
-            counter = counter + 1
-            prev_hum_state = curr_hum_state
-            prev_temp_state = curr_temp_state
-            if(counter >= data_interval):
-                counter = 0
+                # 8. Send data to azure and JD Edwards if data interval time matches
+                if (counter == 0):
+                    while (lon == 0 or lon == -1):
+                        lat, lon, location = getPositionData(gps)
+                    message = { 
+                        "temp": str(round(temp,2)), 
+                        "tempUnit": temp_unit,
+                        "humidity": str(round(humidity,2)),
+                        "humidityUnit": '%', 
+                        "lat": str(lat),
+                        "lon": str(lon),
+                        "time": str(datetime.now())
+                    }
+                    executor.submit(send_message_azure,token, message)
+                    executor.submit(send_message_jdedwards, temp, temp_unit, humidity, lat, lon)
+                
+                # 9. Trigger email
+                if(prev_temp_state != curr_temp_state and curr_temp_state != 'Normal'):
+                        executor.submit(trigger_temp_email,temp, temp_unit, curr_temp_state, location, lat, lon)
+                if(prev_hum_state != curr_hum_state and curr_hum_state != 'Normal'):
+                        executor.submit(trigger_hum_email,humidity, curr_hum_state, location, lat, lon)
+                
+                time_wait.result()
+                
+                print(counter, data_interval)
+                counter = counter + 1
+                prev_hum_state = curr_hum_state
+                prev_temp_state = curr_temp_state
+                if(counter >= data_interval):
+                    counter = 0
         except KeyboardInterrupt:
             gps.close()
             running = False
