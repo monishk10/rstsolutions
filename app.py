@@ -3,7 +3,7 @@ from hashlib import sha256
 from urllib.parse import quote_plus, urlencode
 from hmac import HMAC
 from datetime import datetime
-from requests.auth import HTTPBasicAuth 
+from requests.auth import HTTPBasicAuth
 from geopy.geocoders import Nominatim
 from keyrings.alt.file import PlaintextKeyring
 import Adafruit_DHT
@@ -16,7 +16,8 @@ import yagmail
 import keyring.backend
 import concurrent.futures
 
- 
+SERVER_IP = '192.168.0.7'
+
 # Temperature Sensor
 DHT_SENSOR = Adafruit_DHT.DHT22
 DHT_PIN = 4
@@ -34,8 +35,9 @@ POLICY = 'iothubowner'
 JDEDWARDS_API_URL = 'http://50.243.34.141:3345/jderest/v3/orchestrator/IoTDeviceTelemetry?'
 JDEDWARDS_USER = 'Vivek'
 JDEDWARDS_PASS = 'Vivek@1'
-DEVICE_NUMBER = '100'
+DEVICE_NUMBER = 100
 IP_ADDRESS = '192.168.0.10'
+
 
 # TRIGGER EVENT
 EMAIL_TRIGGER_URL = 'https://maker.ifttt.com/trigger/temp_alert/with/key/dhdMjDRsVok5BEth3SmtTK'
@@ -46,21 +48,8 @@ geolocator = Nominatim(user_agent="rst")
 # EMAIL
 keyring.set_keyring(PlaintextKeyring())
 yag = yagmail.SMTP('monish.nyu')
-email_list = ['monishk1001@gmail.com', 'mnk337@nyu.edu', 'vivek.patil1985@gmail.com']
-
-def getserial():
-    # Extract serial from cpuinfo file
-    cpuserial = "0000000000000000"
-    try:
-        f = open('/proc/cpuinfo','r')
-        for line in f:
-            if line[0:6]=='Serial':
-                cpuserial = line[10:26]
-        f.close()
-    except:
-        cpuserial = "ERROR000000000"
-
-    return cpuserial
+email_list = ['monishk1001@gmail.com',
+              'mnk337@nyu.edu', 'vivek.patil1985@gmail.com']
 
 
 def generate_sas_token():
@@ -69,53 +58,82 @@ def generate_sas_token():
     signature = b64encode(HMAC(b64decode(KEY), sign_key, sha256).digest())
 
     rawtoken = {
-        'sr' :  URI,
+        'sr':  URI,
         'sig': signature,
-        'se' : expiry
+        'se': expiry
     }
 
     rawtoken['skn'] = POLICY
 
     return 'SharedAccessSignature ' + urlencode(rawtoken)
 
+
 def create_entry():
     try:
-        url = 'http://{}:7777/device/{}'.format(IP_ADDRESS,UUID)
-        response = requests.get(url)
-        response = response.content.decode('utf-8')
-        data_json = json.loads(response)
-        
-        if (data_json["message"] == 'Device found'):
-            print("Entry already exists")
-        else:
-            URL = 'http://{}:7777/devices'.format(IP_ADDRESS)
-            data = {
-                "IOTUniversalID": UUID ,
-                "DeviceNumber": DEVICE_NUMBER,
-                "IPAddress": IP_ADDRESS,
-                "dataInterval": "300",
-                "reboot": "0",
-                "tempUnit": "C",
-                "minTemp": "20",
-                "maxTemp": "40",
-                "minHum": "30",
-                "maxHum": "80"
-            }
+        URL = 'http://{}:5000/devices/add'.format(SERVER_IP)
+        data = {
+            "DeviceNumber": DEVICE_NUMBER,
+            "IPAddress": IP_ADDRESS,
+            "dataInterval": 300,
+            "reboot": 0,
+            "tempUnit": "C",
+            "minTemp": 20,
+            "maxTemp": 40,
+            "minHum": 20,
+            "maxHum": 80
+        }
+        newHeaders = {'Content-type': 'application/json',
+                      'Accept': 'text/plain'}
+        response = requests.post(
+            URL, headers=newHeaders, data=json.dumps(data))
 
-            response = requests.post(URL, data=data)     
-            if (response.status_code == 201):
-                print("Entry created")
-            else:
-                print("Error creating entry")
+        if (response.content.decode('utf-8') == '"Device added!"'):
+            print("Entry created")
+        else:
+            print("Entry already exists")
     except:
         print("Error creating entry")
+
+
+def getID():
+    try:
+        URL = 'http://{}:5000/devices/devicenumber/{}'.format(
+            SERVER_IP, DEVICE_NUMBER)
+        response = requests.get(URL)
+        data = json.loads(response.content.decode('utf-8'))
+        return(data["_id"])
+    except:
+        return("Error finding ID")
+
+
+def rebootReset():
+    try:
+        URL = 'http://{}:5000/devices/{}'.format(SERVER_IP, UUID)
+        response = requests.get(URL)
+        response = response.content.decode('utf-8')
+        data_json = json.loads(response)
+        data_json.pop('_id', None)
+        data_json.pop('createdAt', None)
+        data_json.pop('updatedAt', None)
+        data_json.pop('__v', None)
+        data_json["reboot"] = 0
+
+        URL = 'http://{}:5000/devices/update/{}'.format(SERVER_IP, UUID)
+        newHeaders = {'Content-type': 'application/json',
+                      'Accept': 'text/plain'}
+        response = requests.post(
+            URL, headers=newHeaders, data=json.dumps(data_json))
+    except:
+        print("error")
 
 # In the NMEA message, the position gets transmitted as:
 # DDMM.MMMMM, where DD denotes the degrees and MM.MMMMM denotes
 # the minutes. However, I want to convert this format to the following:
 # DD.MMMM. This method converts a transmitted string to the desired format
+
+
 def formatDegreesMinutes(coordinates, digits, direction):
-    
+
     parts = coordinates.split(".")
 
     if (len(parts) != 2):
@@ -123,7 +141,7 @@ def formatDegreesMinutes(coordinates, digits, direction):
 
     if (digits > 3 or digits < 2):
         return coordinates
-    
+
     left = parts[0]
     right = parts[1]
     degrees = str(left[:digits])
@@ -137,6 +155,8 @@ def formatDegreesMinutes(coordinates, digits, direction):
 # This method reads the data from the serial port, the GPS dongle is attached to,
 # and then parses the NMEA messages it transmits.
 # gps is the serial port, that's used to communicate with the GPS adapter
+
+
 def getPositionData(gps):
     data = gps.readline().decode('utf-8')
     message = data[0:6]
@@ -147,7 +167,7 @@ def getPositionData(gps):
         if parts[2] == 'V':
             # V = Warning, most likely, there are no satellites in view...
             print("GPS receiver warning")
-            return (-1.0,-1.0, "GPS Error")
+            return (-1.0, -1.0, "GPS Error")
         else:
             # Get the position data that was transmitted with the GPRMC message
             # In this example, I'm only interested in the longitude and latitude
@@ -157,15 +177,17 @@ def getPositionData(gps):
             return (float(latitude), float(longitude), geolocator.reverse("{}, {}".format(latitude, longitude)))
     else:
         # Handle other NMEA messages and unsupported strings
-        return (0.0,0.0, "No location")
+        return (0.0, 0.0, "No location")
+
 
 def read_temp(unit):
     humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR, DHT_PIN)
     if temperature is None or humidity is None:
-        return (0,0)
+        return (0, 0)
     if(unit == "F"):
         temperature = temperature * (9 / 5) + 32
     return (temperature, humidity)
+
 
 def get_api_vals():
     '''
@@ -176,29 +198,25 @@ def get_api_vals():
     '''
     data = {"code": 0}
     try:
-        url = 'http://{}:7777/device/{}'.format(IP_ADDRESS,UUID)
+        url = 'http://{}:5000/devices/{}'.format(SERVER_IP, UUID)
         response = requests.get(url)
         response = response.content.decode('utf-8')
-        data_json = json.loads(response)
-        
-        if (data_json["message"] == 'Device not found'):
+
+        if (response == 'null'):
             data["code"] = 1
         else:
-            data["dataInterval"] = int(data_json["data"]["dataInterval"])
-            data["tempUnit"] = data_json["data"]["tempUnit"]
-            data["reboot"] = data_json["data"]["reboot"]
-            data["minTemp"] = float(data_json["data"]["minTemp"])
-            data["maxTemp"] = float(data_json["data"]["maxTemp"])
-            data["minHum"] = float(data_json["data"]["minHum"])
-            data["maxHum"] = float(data_json["data"]["maxHum"])
+            data_json = json.loads(response)
+            data.update(data_json)
     except:
         data["code"] = 2
 
     return data
 
+
 def send_message_azure(token, message):
     try:
-        url = 'https://{0}/devices/{1}/messages/events?api-version=2016-11-14'.format(URI, IOT_DEVICE_ID)
+        url = 'https://{0}/devices/{1}/messages/events?api-version=2016-11-14'.format(
+            URI, IOT_DEVICE_ID)
         headers = {
             "Content-Type": "application/json",
             "Authorization": token
@@ -210,68 +228,83 @@ def send_message_azure(token, message):
     except:
         print("Connection error with Azure")
 
+
 def send_message_jdedwards(temp, temp_unit, humidity, lat, lon):
     try:
-        device_id_api = 'DeviceNumber=' + DEVICE_NUMBER
-        iot_universal_id = 'IOTUniversalID=' + UUID
-        ip_address = 'IPAddress=' + IP_ADDRESS
-        temp_api = 'Temperature={:0.2f}&TemperatureUM={}'.format(temp,temp_unit)
-        weight_api ='Weight=0&WeightUM=kg'
-        location_api = 'Latitude={}&Longitude={}'.format(lat,lon)
-        precipitation_api = 'Precipitation=0&PrecipitationUM=A'
-        humidity_api = 'Humidity={:0.2f}&HumidityUM=%'.format(humidity)
-        
-        request_url = JDEDWARDS_API_URL + device_id_api + '&' + iot_universal_id + '&' + ip_address + '&' + temp_api + '&' + weight_api + '&' + location_api + '&' + precipitation_api + '&' + humidity_api
-        response = requests.get(request_url, 
-                    auth = HTTPBasicAuth(JDEDWARDS_USER, JDEDWARDS_PASS))
+        PARAMS = {
+            'DeviceNumber': str(DEVICE_NUMBER),
+            'IOTUniversalID': UUID,
+            'IPAddress': IP_ADDRESS,
+            'Temperature': '{:0.2f}'.format(temp),
+            'TemperatureUM': temp_unit,
+            'Weight': '0',
+            'WeightUM': 'kg',
+            'Latitude': str(lat),
+            'Longitude': str(lon),
+            'Precipitation': '0',
+            'PrecipitationUM': 'A',
+            'Humidity': '{:0.2f}'.format(humidity),
+            'HumidityUM': 'p'
+        }
+        response = requests.get(url=JDEDWARDS_API_URL, params=PARAMS,
+                                auth=HTTPBasicAuth(JDEDWARDS_USER, JDEDWARDS_PASS))
         print(response.content.decode('utf-8'))
     except:
-        print("Connection error with JD Edwards") 
+        print("Connection error with JD Edwards")
+
 
 def trigger_temp_email(temp, temp_unit, state, location, lat, lon):
     try:
         subject = '{} Temp Alert'.format(state)
         content = [
-            '<h2>Temperature Alert </h2>', 
-            '<p>Temperature: {}° {} </p>'.format(round(temp,2), temp_unit), 
+            '<h2>Temperature Alert </h2>',
+            '<p>Temperature: {}° {} </p>'.format(round(temp, 2), temp_unit),
             '<p>Device Number: {}</p>'.format(DEVICE_NUMBER),
             '<p>UUID: {}</p>'.format(UUID),
             '<p>Location: {}({},{})</p>'.format(location, lat, lon),
             '<p>Time: {}</p>'.format(datetime.now()),
             '<a href="http://www.google.com">Link</a>'
-            ]
+        ]
 
         yag.send(email_list, subject, content)
         print("TEMP EMAIL SENT")
     except:
         print("Error sending temp email")
 
+
 def trigger_hum_email(humidity, state, location, lat, lon):
     try:
-        
+
         subject = '{} Humidity Alert'.format(state)
         content = [
-            '<h2>Humidity Alert </h2>', 
-            '<p>Humidity: {}{} </p>'.format(round(humidity,2), '%'), 
+            '<h2>Humidity Alert </h2>',
+            '<p>Humidity: {}{} </p>'.format(round(humidity, 2), '%'),
             '<p>Device Number: {}</p>'.format(DEVICE_NUMBER),
             '<p>UUID: {}</p>'.format(UUID),
             '<p>Location: {}({},{})</p>'.format(location, lat, lon),
             '<p>Time: {}</p>'.format(datetime.now()),
             '<a href="http://www.google.com">Link</a>'
-            ]
+        ]
 
         yag.send(email_list, subject, content)
         print("HUM EMAIL SENT")
     except:
         print("Error sending hum email")
 
+
 def wait():
     time.sleep(1)
 
+
 if __name__ == '__main__':
-    # 1. Generate UUID
-    UUID = getserial()
-    print("UUID: {}".format(UUID))
+    print('###############################')
+    print('#                             #')
+    print('#      IoT Device Tracker     #')
+    print('#                             #')
+    print('###############################')
+    # 1. Create entry
+    create_entry()
+    UUID = getID()
 
     # 2. Generate SAS Token
     token = generate_sas_token()
@@ -282,12 +315,9 @@ if __name__ == '__main__':
     prev_temp_state = prev_hum_state = 'ABNORMAL'
     curr_temp_state = curr_hum_state = ''
     running = True
-    
-    
-    # 4. Create an entry
-    create_entry()
 
-    gps = serial.Serial(SERIAL_PORT, baudrate = 9600, timeout = 0.5)
+    # 4. GPS module
+    gps = serial.Serial(SERIAL_PORT, baudrate=9600, timeout=0.5)
 
     while running:
         try:
@@ -300,25 +330,24 @@ if __name__ == '__main__':
                     # Check codes
                     if(data["code"] == 1):
                         print("Device Not Found")
-                        time.sleep(1)
                         continue
                     elif(data["code"] == 2):
                         print("Invalid API. Check API again")
-                        time.sleep(1)
                         break
 
-                    if (data["reboot"] == '1'):
-                        os.system("sudo reboot")
-                    
+                    if (data["reboot"] == 1):
+                        rebootReset()
+                        print("Rebooting")
+
                     if (not(data["tempUnit"] == 'C' or data["tempUnit"] == 'F')):
                         temp_unit = 'C'
                     else:
                         temp_unit = data["tempUnit"]
 
                     data_interval = data["dataInterval"]
-                
+
                     # 6. Read temperature and humidity values
-                    temp, humidity = read_temp(temp_unit) 
+                    temp, humidity = read_temp(temp_unit)
 
                     # 7. Check Trigger event if temp<minTemp or temp>maxTemp
                     if (temp < data["minTemp"]):
@@ -327,7 +356,7 @@ if __name__ == '__main__':
                         curr_temp_state = 'High'
                     else:
                         curr_temp_state = 'Normal'
-                    
+
                     if (humidity < data["minHum"]):
                         curr_hum_state = 'Low'
                     elif(humidity > data["maxHum"]):
@@ -339,27 +368,30 @@ if __name__ == '__main__':
                 if (counter == 0):
                     while (lon == 0 or lon == -1):
                         lat, lon, location = getPositionData(gps)
-                    message = { 
-                        "temp": str(round(temp,2)), 
+                    message = {
+                        "temp": str(round(temp, 2)),
                         "tempUnit": temp_unit,
-                        "humidity": str(round(humidity,2)),
-                        "humidityUnit": '%', 
+                        "humidity": str(round(humidity, 2)),
+                        "humidityUnit": '%',
                         "lat": str(lat),
                         "lon": str(lon),
                         "time": str(datetime.now())
                     }
-                    executor.submit(send_message_azure,token, message)
-                    executor.submit(send_message_jdedwards, temp, temp_unit, humidity, lat, lon)
-                
+                    executor.submit(send_message_azure, token, message)
+                    executor.submit(send_message_jdedwards, temp,
+                                    temp_unit, humidity, lat, lon)
+
                 # 9. Trigger email
                 if(prev_temp_state != curr_temp_state and curr_temp_state != 'Normal'):
-                        executor.submit(trigger_temp_email,temp, temp_unit, curr_temp_state, location, lat, lon)
+                    executor.submit(trigger_temp_email, temp, temp_unit,
+                                    curr_temp_state, location, lat, lon)
                 if(prev_hum_state != curr_hum_state and curr_hum_state != 'Normal'):
-                        executor.submit(trigger_hum_email,humidity, curr_hum_state, location, lat, lon)
-                
+                    executor.submit(trigger_hum_email, humidity,
+                                    curr_hum_state, location, lat, lon)
+
                 time_wait.result()
-                
-                print(counter, data_interval)
+
+                print('Time left: {} seconds'.format(data_interval - counter))
                 counter = counter + 1
                 prev_hum_state = curr_hum_state
                 prev_temp_state = curr_temp_state
