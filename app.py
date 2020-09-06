@@ -39,9 +39,6 @@ DEVICE_NUMBER = 100
 IP_ADDRESS = '192.168.0.10'
 
 
-# TRIGGER EVENT
-EMAIL_TRIGGER_URL = 'https://maker.ifttt.com/trigger/temp_alert/with/key/dhdMjDRsVok5BEth3SmtTK'
-
 # GPS
 geolocator = Nominatim(user_agent="rst")
 
