@@ -45,6 +45,7 @@ class ServerData:
             0 - OK
             1 - DEVICE NOT FOUND
             2 - ERROR CONNECTING TO API
+            3 - INTERNET CONNECTION LOST
         '''
         data = {"code": 0}
         try:
@@ -68,6 +69,16 @@ class ServerData:
                 if (not(data["tempUnit"] == 'C' or data["tempUnit"] == 'F')):
                     data["tempUnit"] = 'C'
         except:
-            data["code"] = 2
+            if (internet_check()):
+                data["code"] = 2
+            else:
+                data["code"] = 3
 
         return data
+
+    def internet_check(self):
+        try:
+            requests.get('http://216.58.192.142', timeout=1)
+            return True
+        except requests.exceptions.Timeout:
+            return False

@@ -38,7 +38,6 @@ class GPS:
         self.gps.close()
 
     def getLocation(self, lat, lon):
-        response = requests.get(
-            'https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={}&lon={}'.format(lat, lon))
+        response = requests.get('https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={}&lon={}'.format(lat, lon))
         response = json.loads(response.content.decode('utf-8'))
         return(response['display_name'])
