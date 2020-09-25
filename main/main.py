@@ -8,7 +8,7 @@ import server_data
 import send_data
 import send_email
 import caching
-
+import ota_updater
 
 def wait():
     time.sleep(1)
@@ -27,7 +27,7 @@ if __name__ == '__main__':
     data_uploader = send_data.DataUpload()
     email_trigger = send_email.EmailEventTrigger()
     cache_manager = caching.Caching()
-
+    ota = ota_updater.OTAUpdater('https://github.com/monishk10/rstsolutions')
 
     counter = data_interval = 0
     running = internet_connection = True
@@ -55,6 +55,7 @@ if __name__ == '__main__':
 
                     if (data["reboot"] == 1 and internet_connection):
                         print("[MAIN]Rebooting")
+                        ota.download_and_install_update_if_available()
                         device_data.reboot_reset()
 
                     data_interval = data["dataInterval"]
