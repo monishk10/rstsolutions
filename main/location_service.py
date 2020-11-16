@@ -1,6 +1,7 @@
 import serial
 import requests
 import json
+import pynmea2
 
 
 class GPS:
@@ -25,19 +26,21 @@ class GPS:
         while self.running and self.count:
             try:
                 data = self.gps.readline().decode('utf-8')
-                data = data.split(",")
-                if (data[0] == '$GPRMC'):
-                    self.getLatLng(
-                        data[3], data[5], data[4], data[6])
+                if (data.split(",")[0] == '$GPRMC'):
+                    d = pynmea2.parse(data)
+                    self.lat = float(d.latitude)
+                    self.lon = float(d.longitude)
                     self.running = False
                     self.gps.close()
                     return (self.lat, self.lon)
                 self.count = self.count - 1
             except Exception as e:
                 print(e)
+                return(0.0, 0.0)
         self.gps.close()
 
     def getLocation(self, lat, lon):
-        response = requests.get('https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={}&lon={}'.format(lat, lon))
+        response = requests.get(
+            'https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={}&lon={}'.format(lat, lon))
         response = json.loads(response.content.decode('utf-8'))
         return(response['display_name'])

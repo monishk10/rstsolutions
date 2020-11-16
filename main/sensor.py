@@ -7,7 +7,7 @@ class DHT:
         self.DHT_SENSOR = Adafruit_DHT.DHT22
         self.DHT_PIN = 4
 
-    def read_temp(self, unit):
+    def read_temp_hum(self, unit):
         humidity, temperature = Adafruit_DHT.read_retry(
             self.DHT_SENSOR, self.DHT_PIN)
         if temperature is None or humidity is None:

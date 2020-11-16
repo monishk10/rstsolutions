@@ -1,4 +1,5 @@
 from datetime import datetime
+import pytz
 import json
 import time
 import concurrent.futures
@@ -9,6 +10,7 @@ import send_data
 import send_email
 import caching
 import ota_updater
+
 
 def wait():
     time.sleep(1)
@@ -59,10 +61,12 @@ if __name__ == '__main__':
                         device_data.reboot_reset()
 
                     data_interval = data["dataInterval"]
-                    curr_sensor_value["TempUnit"] = "° {}".format(data["tempUnit"])
+                    curr_sensor_value["TempUnit"] = "° {}".format(
+                        data["tempUnit"])
 
                     # Read temperature and humidity values
-                    curr_sensor_value["Temp"], curr_sensor_value["Hum"] = dht.read_temp(data["tempUnit"])
+                    curr_sensor_value["Temp"], curr_sensor_value["Hum"] = dht.read_temp_hum(
+                        data["tempUnit"])
 
                     # Check Trigger event
                     for key in curr_state:
@@ -76,21 +80,28 @@ if __name__ == '__main__':
                 # Send data to azure and JD Edwards if data interval time matches
                 if (counter <= 0):
                     counter = 0
-                    curr_sensor_value["lat"], curr_sensor_value["lon"] = gps.getData()
+                    curr_sensor_value["lat"], curr_sensor_value["lon"] = gps.getData(
+                    )
                     message = {
+                        "DeviceNumber": data_uploader.DEVICE_NUMBER,
                         "UUID": device_data.get_UUID(),
-                        "temp": str(curr_sensor_value["Temp"]),
+                        "IPAddress": data_uploader.DEVICE_IP,
+                        "temp": curr_sensor_value["Temp"],
                         "temp_unit": data["tempUnit"],
-                        "humidity": str(curr_sensor_value["Hum"]),
+                        "humidity": curr_sensor_value["Hum"],
                         "humidity_unit": '%',
-                        "lat": str(curr_sensor_value["lat"]),
-                        "lon": str(curr_sensor_value["lon"]),
-                        "time": str(datetime.now())
+                        "lat": curr_sensor_value["lat"],
+                        "lon": curr_sensor_value["lon"],
+                        "time": str(datetime.now(pytz.timezone('US/Eastern')))
                     }
+                    print(datetime.now())
                     if (internet_connection):
                         cache_manager.upload_data()
-                        executor.submit(data_uploader.send_message_azure, message)
-                        executor.submit(data_uploader.send_message_jdedwards, message)
+                        executor.submit(data_uploader.send_mongo_db, message)
+                        # executor.submit(
+                        #     data_uploader.send_message_azure, message)
+                        executor.submit(
+                            data_uploader.send_message_jdedwards, message)
                     else:
                         print("[MAIN]No internet")
                         cache_manager.store_data(json.dumps(message))
@@ -109,7 +120,8 @@ if __name__ == '__main__':
                             "lat": curr_sensor_value["lat"],
                             "lon": curr_sensor_value["lon"]
                         }
-                        executor.submit(email_trigger.trigger_email, device_info)
+                        executor.submit(
+                            email_trigger.trigger_email, device_info)
 
                 time_wait.result()
 

@@ -15,10 +15,24 @@ class DataUpload:
         self.SAS_TOKEN = "SharedAccessSignature sr=temp-data.azure-devices.net%2Fdevices%2Fmypi&sig=GhR8HWnqDL68Na9ygvui5dpJqxg%2BkT4IepS0evIQrDw%3D&se=1758159828"
 
         # JD Edwards API
-        self.JDEDWARDS_API_URL = 'http://50.243.34.141:3345/jderest/v3/orchestrator/IoTDeviceTelemetry?'
+        self.JDEDWARDS_API_URL = 'https://50.243.34.141:10145/jderest/v3/orchestrator/IoTDeviceTelemetry?'
         self.JDEDWARDS_USER = 'Vivek'
         self.JDEDWARDS_PASS = 'Vivek@1'
-        self.DEVICE_NUMBER = "100"
+        self.DEVICE_NUMBER = 100
+
+    def send_mongo_db(self, message):
+        try:
+            url = 'https://rst-web.herokuapp.com/data/add'
+            # url = 'http://10.0.0.252:5000/data/add'
+            headers = {
+                "Content-Type": "application/json",
+            }
+            data = json.dumps(message)
+            print(data)
+            response = requests.post(url, data=data, headers=headers)
+            print("Data sent to DB")
+        except:
+            print("Connection error with DB")
 
     def send_message_azure(self, message):
         try:
@@ -38,9 +52,9 @@ class DataUpload:
     def send_message_jdedwards(self, message):
         try:
             PARAMS = {
-                'DeviceNumber': self.DEVICE_NUMBER,
+                'DeviceNumber': message["DeviceNumber"],
                 'IOTUniversalID': message["UUID"],
-                'IPAddress': self.DEVICE_IP,
+                'IPAddress': message["IPAddress"],
                 'Temperature': message["temp"],
                 'TemperatureUM': message["temp_unit"],
                 'Weight': '0',
@@ -52,7 +66,7 @@ class DataUpload:
                 'Humidity': message["humidity"],
                 'HumidityUM': message["humidity_unit"]
             }
-            response = requests.get(url=self.JDEDWARDS_API_URL, params=PARAMS,
+            response = requests.get(url=self.JDEDWARDS_API_URL, params=PARAMS, verify=False,
                                     auth=HTTPBasicAuth(self.JDEDWARDS_USER, self.JDEDWARDS_PASS))
             print("Data sent to JD Edwards")
         except Exception as e:

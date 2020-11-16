@@ -4,7 +4,7 @@ import requests
 
 class ServerData:
     def __init__(self):
-        self.MONGODB_SERVER = 'http://192.168.0.10:5000'
+        self.MONGODB_SERVER = 'https://rst-web.herokuapp.com'
         self.UUID = "0000000000000000"
         try:
             f = open('/proc/cpuinfo', 'r')
