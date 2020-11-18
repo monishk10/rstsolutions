@@ -104,8 +104,8 @@ if __name__ == '__main__':
                     if (internet_connection):
                         cache_manager.upload_data()
                         executor.submit(data_uploader.send_mongo_db, message)
-                        # executor.submit(
-                        #     data_uploader.send_message_azure, message)
+                        executor.submit(
+                            data_uploader.send_message_azure, message)
                         executor.submit(
                             data_uploader.send_message_jdedwards, message)
                     else:
