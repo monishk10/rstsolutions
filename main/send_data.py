@@ -8,17 +8,19 @@ class DataUpload:
     def __init__(self):
         self.DEVICE_IP = subprocess.check_output(
             "hostname -I", shell=True).decode('utf-8').split(" ")[0]
-
+        f = open('../config.txt', 'r')
+        d = f.readlines()
         # Azure IoT Hub
         self.URI = 'temp-data.azure-devices.net'
-        self.IOT_DEVICE_ID = 'mypi'
-        self.SAS_TOKEN = "SharedAccessSignature sr=temp-data.azure-devices.net%2Fdevices%2Fmypi&sig=GhR8HWnqDL68Na9ygvui5dpJqxg%2BkT4IepS0evIQrDw%3D&se=1758159828"
+        self.IOT_DEVICE_ID = d[1].strip('\n')
+        self.SAS_TOKEN = d[4].strip('\n')
 
         # JD Edwards API
         self.JDEDWARDS_API_URL = 'https://50.243.34.141:10145/jderest/v3/orchestrator/IoTDeviceTelemetry?'
-        self.JDEDWARDS_USER = 'Vivek'
-        self.JDEDWARDS_PASS = 'Vivek@1'
-        self.DEVICE_NUMBER = 100
+        self.JDEDWARDS_USER = d[2].strip('\n')
+        self.JDEDWARDS_PASS = d[3].strip('\n')
+        self.DEVICE_NUMBER = int(d[0])
+        f.close()
 
     def send_mongo_db(self, message):
         try:

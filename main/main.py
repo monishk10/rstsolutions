@@ -10,6 +10,7 @@ import send_data
 import send_email
 import caching
 import ota_updater
+import os
 
 
 def wait():
@@ -23,7 +24,10 @@ if __name__ == '__main__':
     print('#                             #')
     print('###############################')
 
-    dht = sensor.DHT()
+    os.system('sudo pigpiod')
+    wait()
+    
+    dht = sensor.DHT_SENSOR()
     gps = location_service.GPS()
     device_data = server_data.ServerData()
     data_uploader = send_data.DataUpload()
@@ -65,8 +69,10 @@ if __name__ == '__main__':
                         data["tempUnit"])
 
                     # Read temperature and humidity values
-                    curr_sensor_value["Temp"], curr_sensor_value["Hum"] = dht.read_temp_hum(
-                        data["tempUnit"])
+                    temp, humidity = dht.read_temp_hum(data["tempUnit"])
+                    if (not(temp == -1000 or humidity == -1000)):
+                        curr_sensor_value["Temp"] = temp
+                        curr_sensor_value["Hum"] = humidity
 
                     # Check Trigger event
                     for key in curr_state:

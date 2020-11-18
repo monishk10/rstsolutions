@@ -11,6 +11,7 @@ class ServerData:
             for line in f:
                 if line[0:6] == 'Serial':
                     self.UUID = line[10:26]
+                    print(self.UUID)
             f.close()
         except:
             self.UUID = "ERROR000000000"

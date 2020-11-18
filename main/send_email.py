@@ -7,7 +7,7 @@ from datetime import datetime
 class EmailEventTrigger:
     def __init__(self):
         keyring.set_keyring(PlaintextKeyring())
-        self.yag = yagmail.SMTP('info.rstsolutions')
+        self.yag = yagmail.SMTP({'info.rstsolutions@gmail.com': 'IoT Hub RSTSolutions'})
         self.email_list = ['monish.kapadia@rstsolutions.com']
 
     def trigger_email(self, data):
