@@ -11,6 +11,7 @@ import send_email
 import caching
 import ota_updater
 import os
+import subprocess
 
 
 def wait():
@@ -63,7 +64,7 @@ if __name__ == '__main__':
                         print("[MAIN]Rebooting")
                         ota.download_and_install_update_if_available()
                         device_data.reboot_reset()
-                        os.system('sudo reboot')
+                        subprocess.Popen(['sudo', 'shutdown', '-r', 'now'])
 
                     data_interval = data["dataInterval"]
                     curr_sensor_value["TempUnit"] = "° {}".format(
