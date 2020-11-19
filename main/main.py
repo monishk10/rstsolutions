@@ -26,7 +26,7 @@ if __name__ == '__main__':
 
     os.system('sudo pigpiod')
     wait()
-    
+
     dht = sensor.DHT_SENSOR()
     gps = location_service.GPS()
     device_data = server_data.ServerData()
@@ -63,6 +63,7 @@ if __name__ == '__main__':
                         print("[MAIN]Rebooting")
                         ota.download_and_install_update_if_available()
                         device_data.reboot_reset()
+                        os.system('sudo reboot')
 
                     data_interval = data["dataInterval"]
                     curr_sensor_value["TempUnit"] = "° {}".format(
@@ -141,4 +142,5 @@ if __name__ == '__main__':
                     counter = 0
         except KeyboardInterrupt:
             running = False
+            dht.close_pi_sensor()
             print("Done")

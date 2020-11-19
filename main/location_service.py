@@ -38,6 +38,7 @@ class GPS:
                 print(e)
                 return(0.0, 0.0)
         self.gps.close()
+        return(0.0, 0.0)
 
     def getLocation(self, lat, lon):
         response = requests.get(

@@ -9,18 +9,20 @@ import json
 import time
 import urllib3
 
+
 class DataUpload:
     def __init__(self):
         self.DEVICE_IP = subprocess.check_output(
             "hostname -I", shell=True).decode('utf-8').split(" ")[0]
-        f = open('../config.txt', 'r')
+        f = open('/home/pi/rstsolutions/config.txt', 'r')
         d = f.readlines()
         # Azure IoT Hub
         self.URI = d[2].strip('\n')
         self.IOT_DEVICE_ID = d[1].strip('\n')
         self.SAS_KEY = d[3].strip('\n')
         self.POLICY = 'iothubowner'
-        self.SAS_TOKEN = self.generate_sas_token(self.URI, self.SAS_KEY, self.POLICY)
+        self.SAS_TOKEN = self.generate_sas_token(
+            self.URI, self.SAS_KEY, self.POLICY)
 
         # JD Edwards API
         self.JDEDWARDS_API_URL = 'https://50.243.34.141:10145/jderest/v3/orchestrator/IoTDeviceTelemetry?'
@@ -30,15 +32,15 @@ class DataUpload:
         f.close()
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    def generate_sas_token(self,URI,KEY,POLICY):
+    def generate_sas_token(self, URI, KEY, POLICY):
         expiry = str(int(time.time() + 3600))
         sign_key = (URI + '\n' + expiry).encode('utf-8')
         signature = b64encode(HMAC(b64decode(KEY), sign_key, sha256).digest())
 
         rawtoken = {
-            'sr' :  URI,
+            'sr':  URI,
             'sig': signature,
-            'se' : expiry
+            'se': expiry
         }
 
         rawtoken['skn'] = POLICY
