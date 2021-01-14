@@ -21,6 +21,7 @@ def wait():
 if __name__ == '__main__':
     print('###############################')
     print('#                             #')
+
     print('#      IoT Device Tracker     #')
     print('#                             #')
     print('###############################')
@@ -106,8 +107,8 @@ if __name__ == '__main__':
                     if (internet_connection):
                         cache_manager.upload_data()
                         executor.submit(data_uploader.send_mongo_db, message)
-                        executor.submit(
-                            data_uploader.send_message_azure, message)
+                        # executor.submit(
+                        #     data_uploader.send_message_azure, message)
                         executor.submit(
                             data_uploader.send_message_jdedwards, message)
                     else:
@@ -118,8 +119,8 @@ if __name__ == '__main__':
                 for key in curr_state:
                     if(prev_state[key] != curr_state[key] and curr_state[key] != 'Normal' and internet_connection):
                         device_info = {
-                            "name": f"{'Temperature' if key=='Temp' else 'Humidity'}",
                             "UUID": device_data.get_UUID(),
+                            "sensor": f"{'Temperature' if key=='Temp' else 'Humidity'}",
                             "state": curr_state[key],
                             "value": curr_sensor_value[key],
                             "unit": curr_sensor_value["{}Unit".format(key)],
@@ -130,6 +131,7 @@ if __name__ == '__main__':
                         }
                         executor.submit(
                             email_trigger.trigger_email, device_info)
+                        executor.submit(email_trigger.send_alert, device_info)
 
                 time_wait.result()
 

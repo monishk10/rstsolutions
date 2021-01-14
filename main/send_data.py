@@ -50,6 +50,7 @@ class DataUpload:
     def send_mongo_db(self, message):
         try:
             url = 'https://rst-web.herokuapp.com/data/add'
+            # url = 'http://10.0.0.214:5000/data/add'
             headers = {
                 "Content-Type": "application/json",
             }
